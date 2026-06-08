@@ -58,7 +58,7 @@
     post {
         always {
             emailext(
-                to: 'ndeyeastoudieng@esp.sn',
+                to: 'astoudieng941@gmail.com',
                 subject: "[Jenkins] \ — \ #\",
                 body: """
 Build       : \
