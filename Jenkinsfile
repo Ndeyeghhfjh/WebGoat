@@ -97,9 +97,8 @@ pipeline {
     
             // ✅ ARCHIVAGE DU RAPPORT (IMPORTANT)
             archiveArtifacts artifacts: 'rapport_sast.html', fingerprint: true
-    
-            // nettoyage workspace
-            cleanWs()
+
+            cleanWs()             // nettoyage workspace
         }
     }
 }   
