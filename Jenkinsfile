@@ -51,24 +51,9 @@ pipeline {
                 sh '''
                     docker run --rm \
                         -v $WORKSPACE:/data \
+                        -w /data \
                         python:3.11-alpine \
-                        python3 -c "
-import json, os
-os.chdir('/data')
-issues = []
-for f in ['result1.json', 'result2.json']:
-    try:
-        with open(f) as fp:
-            issues.extend(json.load(fp).get('issues', []))
-    except:
-        pass
-with open('rapport_webgoat.csv', 'w') as out:
-    out.write('Severity,Message,File,Line\n')
-    for i in issues:
-        msg = i.get('message', '').replace(',', ';')
-        out.write(f\"{i.get('severity')},{msg},{i.get('component')},{i.get('line', '')}\n\")
-print(f'Rapport genere : {len(issues)} issues')
-"
+                        python3 generate_rapport.py
                 '''
                 archiveArtifacts artifacts: 'rapport_webgoat.csv,result*.json', fingerprint: true
             }
@@ -84,12 +69,12 @@ print(f'Rapport genere : {len(issues)} issues')
                         to: 'astoudieng941@gmail.com',
                         subject: "[Jenkins] Build #${BUILD_NUMBER} - SUCCES - ${JOB_NAME}",
                         body: """
-Build      : ${BUILD_NUMBER}
-Job        : ${JOB_NAME}
-Status     : SUCCES
-Commit     : ${env.GIT_COMMIT ?: 'N/A'}
-Rapport    : ${BUILD_URL}artifact/rapport_webgoat.csv
-Logs       : ${BUILD_URL}console
+Build   : ${BUILD_NUMBER}
+Job     : ${JOB_NAME}
+Status  : SUCCES
+Commit  : ${env.GIT_COMMIT ?: 'N/A'}
+Rapport : ${BUILD_URL}artifact/rapport_webgoat.csv
+Logs    : ${BUILD_URL}console
                         """,
                         attachmentsPattern: 'rapport_webgoat.csv',
                         mimeType: 'text/plain'
@@ -107,11 +92,11 @@ Logs       : ${BUILD_URL}console
                         to: 'astoudieng941@gmail.com',
                         subject: "[Jenkins] Build #${BUILD_NUMBER} - ECHEC - ${JOB_NAME}",
                         body: """
-Build      : ${BUILD_NUMBER}
-Job        : ${JOB_NAME}
-Status     : ECHEC
-Commit     : ${env.GIT_COMMIT ?: 'N/A'}
-Logs       : ${BUILD_URL}console
+Build   : ${BUILD_NUMBER}
+Job     : ${JOB_NAME}
+Status  : ECHEC
+Commit  : ${env.GIT_COMMIT ?: 'N/A'}
+Logs    : ${BUILD_URL}console
                         """,
                         mimeType: 'text/plain'
                     )
