@@ -31,7 +31,7 @@ pipeline {
             steps {
                 echo '=== Lancement analyse SonarQube ==='
                 sh '''
-                    sudo docker run --rm \
+                    docker run --rm \
                         --network host \
                         -v $WORKSPACE:/usr/src \
                         sonarsource/sonar-scanner-cli \
@@ -126,7 +126,7 @@ Logs       : ${BUILD_URL}console
         }
         always {
             node('built-in') {
-                sh 'sudo docker system prune -f || true'
+                sh 'docker system prune -f || true'
                 echo '=== Nettoyage Docker termine ==='
             }
         }
