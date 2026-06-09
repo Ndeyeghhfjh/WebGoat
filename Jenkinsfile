@@ -1,4 +1,4 @@
-pipeline {
+﻿pipeline {
     agent any
 
     environment {
@@ -43,28 +43,13 @@ pipeline {
                 sh '''
                     curl -s -u admin:$SONAR_TOKEN \
                         "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=1" \
-                        -o $WORKSPACE/result1.json
+                        -o result1.json
                     curl -s -u admin:$SONAR_TOKEN \
                         "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=2" \
-                        -o $WORKSPACE/result2.json
-
-                    cat > $WORKSPACE/gen.py << 'PYEOF'
-import json
-issues = []
-for f in ["/data/result1.json", "/data/result2.json"]:
-    try:
-        with open(f) as fp:
-            issues.extend(json.load(fp).get("issues", []))
-    except Exception as e:
-        print("Erreur: " + str(e))
-with open("/data/rapport_webgoat.csv", "w") as out:
-    out.write("Severity,Message,File,Line\n")
-    for i in issues:
-        msg = i.get("message", "").replace(",", ";")
-        out.write(i.get("severity","") + "," + msg + "," + i.get("component","") + "," + str(i.get("line","")) + "\n")
-print("Issues exportees: " + str(len(issues)))
-PYEOF
-
+                        -o result2.json
+                '''
+                writeFile file: 'gen.py', text: 'import json\nissues = []\nfor f in [\"/data/result1.json\", \"/data/result2.json\"]:\n    try:\n        with open(f) as fp:\n            issues.extend(json.load(fp).get(\"issues\", []))\n    except Exception as e:\n        print(\"Erreur: \" + str(e))\nwith open(\"/data/rapport_webgoat.csv\", \"w\") as out:\n    out.write(\"Severity,Message,File,Line\\n\")\n    for i in issues:\n        msg = i.get(\"message\", \"\").replace(\",\", \";\")\n        out.write(i.get(\"severity\",\"\") + \",\" + msg + \",\" + i.get(\"component\",\"\") + \",\" + str(i.get(\"line\",\"\")) + \"\\n\")\nprint(\"Issues exportees: \" + str(len(issues)))\n'
+                sh '''
                     docker run --rm \
                         -v $WORKSPACE:/data \
                         python:3.11-alpine \
@@ -82,20 +67,20 @@ PYEOF
                 try {
                     emailext(
                         to: 'astoudieng941@gmail.com',
-                        subject: "[Jenkins] Build #${BUILD_NUMBER} - SUCCES - ${JOB_NAME}",
-                        body: """
+                        subject: \"[Jenkins] Build #${BUILD_NUMBER} - SUCCES - ${JOB_NAME}\",
+                        body: \"\"\"
 Build   : ${BUILD_NUMBER}
 Job     : ${JOB_NAME}
 Status  : SUCCES
 Commit  : ${env.GIT_COMMIT ?: 'N/A'}
 Rapport : ${BUILD_URL}artifact/rapport_webgoat.csv
 Logs    : ${BUILD_URL}console
-                        """,
+                        \"\"\",
                         attachmentsPattern: 'rapport_webgoat.csv',
                         mimeType: 'text/plain'
                     )
                 } catch(Exception e) {
-                    echo "Email non envoye : ${e.message}"
+                    echo \"Email non envoye : ${e.message}\"
                 }
             }
         }
@@ -105,18 +90,18 @@ Logs    : ${BUILD_URL}console
                 try {
                     emailext(
                         to: 'astoudieng941@gmail.com',
-                        subject: "[Jenkins] Build #${BUILD_NUMBER} - ECHEC - ${JOB_NAME}",
-                        body: """
+                        subject: \"[Jenkins] Build #${BUILD_NUMBER} - ECHEC - ${JOB_NAME}\",
+                        body: \"\"\"
 Build   : ${BUILD_NUMBER}
 Job     : ${JOB_NAME}
 Status  : ECHEC
 Commit  : ${env.GIT_COMMIT ?: 'N/A'}
 Logs    : ${BUILD_URL}console
-                        """,
+                        \"\"\",
                         mimeType: 'text/plain'
                     )
                 } catch(Exception e) {
-                    echo "Email non envoye : ${e.message}"
+                    echo \"Email non envoye : ${e.message}\"
                 }
             }
         }
