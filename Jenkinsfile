@@ -138,6 +138,7 @@ Commit     : ${env.GIT_COMMIT ?: 'N/A'}
             }
         }
     }
+}     
 
     always {
         echo '=== Nettoyage Docker ==='
