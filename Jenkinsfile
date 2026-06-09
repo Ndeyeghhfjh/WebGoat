@@ -1,5 +1,4 @@
 pipeline {
-
     agent any
 
     environment {
@@ -14,9 +13,6 @@ pipeline {
 
     stages {
 
-        // ─────────────────────────────────────────────
-        // ETAPE 1 : Recuperation du code source
-        // ─────────────────────────────────────────────
         stage('Checkout') {
             steps {
                 echo '=== Recuperation du code source ==='
@@ -24,9 +20,6 @@ pipeline {
             }
         }
 
-        // ─────────────────────────────────────────────
-        // ETAPE 2 : Analyse SAST avec SonarQube
-        // ─────────────────────────────────────────────
         stage('SAST - SonarQube') {
             steps {
                 echo '=== Lancement analyse SonarQube ==='
@@ -35,113 +28,101 @@ pipeline {
                         --network host \
                         -v $WORKSPACE:/usr/src \
                         sonarsource/sonar-scanner-cli \
-                        -Dsonar.projectKey=${PROJECT_KEY} \
+                        -Dsonar.projectKey=webgoat-sast \
                         -Dsonar.sources=. \
                         -Dsonar.exclusions=**/node_modules/**,**/*.xml,**/test/** \
-                        -Dsonar.host.url=${SONAR_URL} \
-                        -Dsonar.token=${SONAR_TOKEN}
+                        -Dsonar.host.url=http://localhost:9000 \
+                        -Dsonar.token=$SONAR_TOKEN
                 '''
-                echo "=== Resultats : ${SONAR_URL}/dashboard?id=${PROJECT_KEY} ==="
             }
         }
 
-        // ─────────────────────────────────────────────
-        // ETAPE 3 : Export des resultats en CSV
-        // ─────────────────────────────────────────────
         stage('Export - Rapport CSV') {
-             steps {
+            steps {
                 echo '=== Export des issues SonarQube ==='
-        
                 sh '''
-                    curl -s -u admin:${SONAR_TOKEN} \
-                        "${SONAR_URL}/api/issues/search?projectKeys=${PROJECT_KEY}&ps=500&p=1" \
+                    curl -s -u admin:$SONAR_TOKEN \
+                        "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=1" \
                         -o result1.json
-        
-                    curl -s -u admin:${SONAR_TOKEN} \
-                        "${SONAR_URL}/api/issues/search?projectKeys=${PROJECT_KEY}&ps=500&p=2" \
+                    curl -s -u admin:$SONAR_TOKEN \
+                        "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=2" \
                         -o result2.json
                 '''
-        
                 sh '''
-python3 - << EOF > rapport_webgoat.csv
-import json
-
+                    docker run --rm \
+                        -v $WORKSPACE:/data \
+                        python:3.11-alpine \
+                        python3 -c "
+import json, os
+os.chdir('/data')
 issues = []
-
-for f in ["result1.json", "result2.json"]:
+for f in ['result1.json', 'result2.json']:
     try:
         with open(f) as fp:
-            issues.extend(json.load(fp).get("issues", []))
-    except Exception:
+            issues.extend(json.load(fp).get('issues', []))
+    except:
         pass
-
-print("Severity,Message,File,Line")
-
-for i in issues:
-    msg = i.get("message", "").replace(",", ";")
-    print(f"{i.get('severity')},{msg},{i.get('component')},{i.get('line', '')}")
-EOF
-'''
-
-        sh 'wc -l rapport_webgoat.csv || true'
-
-        archiveArtifacts artifacts: 'rapport_webgoat.csv,result*.json', fingerprint: true
+with open('rapport_webgoat.csv', 'w') as out:
+    out.write('Severity,Message,File,Line\n')
+    for i in issues:
+        msg = i.get('message', '').replace(',', ';')
+        out.write(f\"{i.get('severity')},{msg},{i.get('component')},{i.get('line', '')}\n\")
+print(f'Rapport genere : {len(issues)} issues')
+"
+                '''
+                archiveArtifacts artifacts: 'rapport_webgoat.csv,result*.json', fingerprint: true
+            }
+        }
     }
-}
-   post {
-    success {
-        echo '=== Build reussi ==='
 
-        script {
-            try {
-                emailext(
-                    to: 'astoudieng941@gmail.com',
-                    subject: "[Jenkins] Build #${BUILD_NUMBER} - SUCCES",
-                    body: """
+    post {
+        success {
+            echo '=== Build reussi ==='
+            script {
+                try {
+                    emailext(
+                        to: 'astoudieng941@gmail.com',
+                        subject: "[Jenkins] Build #${BUILD_NUMBER} - SUCCES - ${JOB_NAME}",
+                        body: """
 Build      : ${BUILD_NUMBER}
 Job        : ${JOB_NAME}
 Status     : SUCCES
 Commit     : ${env.GIT_COMMIT ?: 'N/A'}
-
-📊 Rapport SonarQube + CSV généré
-📎 Pièce jointe disponible
-                    """,
-                    attachmentsPattern: 'rapport_webgoat.csv,result*.json',
-                    mimeType: 'text/plain'
-                )
-            } catch(Exception e) {
-                echo "Email non envoyé : ${e.message}"
+Rapport    : ${BUILD_URL}artifact/rapport_webgoat.csv
+Logs       : ${BUILD_URL}console
+                        """,
+                        attachmentsPattern: 'rapport_webgoat.csv',
+                        mimeType: 'text/plain'
+                    )
+                } catch(Exception e) {
+                    echo "Email non envoye : ${e.message}"
+                }
             }
         }
-    }
-
-    failure {
-        echo '=== Build echoue ==='
-
-        script {
-            try {
-                emailext(
-                    to: 'astoudieng941@gmail.com',
-                    subject: "[Jenkins] Build #${BUILD_NUMBER} - ECHEC",
-                    body: """
+        failure {
+            echo '=== Build echoue ==='
+            script {
+                try {
+                    emailext(
+                        to: 'astoudieng941@gmail.com',
+                        subject: "[Jenkins] Build #${BUILD_NUMBER} - ECHEC - ${JOB_NAME}",
+                        body: """
 Build      : ${BUILD_NUMBER}
 Job        : ${JOB_NAME}
 Status     : ECHEC
 Commit     : ${env.GIT_COMMIT ?: 'N/A'}
-
-❌ Consulte les logs Jenkins
-                    """,
-                   mimeType: 'text/plain'
-                )
-            } catch(Exception e) {
-                echo "Email non envoyé : ${e.message}"
+Logs       : ${BUILD_URL}console
+                        """,
+                        mimeType: 'text/plain'
+                    )
+                } catch(Exception e) {
+                    echo "Email non envoye : ${e.message}"
+                }
             }
         }
-    }
-}     
-
-    always {
-        echo '=== Nettoyage Docker ==='
-        sh 'docker system prune -f || true'
+        always {
+            echo '=== Fin du pipeline ==='
+            sh 'docker system prune -f || true'
+        }
     }
 }
