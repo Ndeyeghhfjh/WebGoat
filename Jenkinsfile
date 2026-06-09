@@ -43,34 +43,32 @@ pipeline {
                 sh '''
                     curl -s -u admin:$SONAR_TOKEN \
                         "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=1" \
-                        -o result1.json
+                        -o $WORKSPACE/result1.json
                     curl -s -u admin:$SONAR_TOKEN \
                         "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=2" \
-                        -o result2.json
+                        -o $WORKSPACE/result2.json
 
-                    cat > /tmp/gen.py << 'PYEOF'
+                    cat > $WORKSPACE/gen.py << 'PYEOF'
 import json
 issues = []
-for f in ["result1.json", "result2.json"]:
+for f in ["/data/result1.json", "/data/result2.json"]:
     try:
         with open(f) as fp:
             issues.extend(json.load(fp).get("issues", []))
-    except Exception:
-        pass
-with open("rapport_webgoat.csv", "w") as out:
+    except Exception as e:
+        print("Erreur: " + str(e))
+with open("/data/rapport_webgoat.csv", "w") as out:
     out.write("Severity,Message,File,Line\n")
     for i in issues:
         msg = i.get("message", "").replace(",", ";")
         out.write(i.get("severity","") + "," + msg + "," + i.get("component","") + "," + str(i.get("line","")) + "\n")
-print("Issues: " + str(len(issues)))
+print("Issues exportees: " + str(len(issues)))
 PYEOF
 
                     docker run --rm \
                         -v $WORKSPACE:/data \
-                        -v /tmp/gen.py:/gen.py \
-                        -w /data \
                         python:3.11-alpine \
-                        python3 /gen.py
+                        python3 /data/gen.py
                 '''
                 archiveArtifacts artifacts: 'rapport_webgoat.csv,result*.json', fingerprint: true
             }
