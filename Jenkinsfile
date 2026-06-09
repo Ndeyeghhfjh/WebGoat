@@ -17,23 +17,25 @@ pipeline {
                 checkout scm
             }
         }
+        stage('Build') {
+            steps {
+                sh './mvnw clean compile'
+            }
+        }
         
         stage('SAST - SonarQube Analyser') {
             steps {
-                echo "=== Lancement analyse SonarQube du code source ==="
+                echo '=== Build + Analyse SonarQube ==='
                 withCredentials([string(credentialsId: 'webgoat-token', variable: 'SONAR_TOKEN')]) {
-                    // RESOLUTION : Appel direct du wrapper incluant les paramètres pour bypasser la compilation Java 25 obligatoire
                     sh '''
                         chmod +x ./mvnw
-                        ./mvnw sonar:sonar \
-                        -Dsonar.projectKey=webgoat-sast \
-                        -Dsonar.host.url=http://127.0.0.1:9000 \
-                        -Dsonar.token=${SONAR_TOKEN} \
-                        -Dsonar.sources=src/main \
-                        -Dsonar.java.binaries=target/classes \
-                        -Dsonar.java.readability.skip=true \
-                        -Dsonar.scm.disabled=true \
-                        -Dsonar.readiness.timeout=120
+                        ./mvnw clean compile sonar:sonar \
+                            -Dsonar.projectKey=webgoat-sast \
+                            -Dsonar.host.url=http://127.0.0.1:9000 \
+                            -Dsonar.token=$SONAR_TOKEN \
+                            -Dsonar.sources=src/main \
+                            -Dsonar.java.binaries=target/classes \
+                            -Dsonar.scm.disabled=true
                     '''
                 }
             }
