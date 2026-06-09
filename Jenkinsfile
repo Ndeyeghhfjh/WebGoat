@@ -15,12 +15,24 @@ pipeline {
     stages {
 
         // ─────────────────────────────────────────────
-        // ETAPE 1 : Recuperation du code source
+        // ETAPE 1 : Checkout shallow (repo volumineux)
         // ─────────────────────────────────────────────
         stage('Checkout') {
             steps {
                 echo '=== Recuperation du code source ==='
-                checkout scm
+                checkout([$class: 'GitSCM',
+                    branches: [[name: '*/main']],
+                    extensions: [
+                        [$class: 'CloneOption',
+                            shallow: true,
+                            depth: 1,
+                            timeout: 30]
+                    ],
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/Ndeyeghhfjh/WebGoat.git'
+                    ]]
+                ])
+                echo '=== Code recupere ==='
             }
         }
 
@@ -94,7 +106,7 @@ for i in issues:
 Build      : ${BUILD_NUMBER}
 Job        : ${JOB_NAME}
 Status     : SUCCES
-Commit     : ${GIT_COMMIT}
+Commit     : ${env.GIT_COMMIT ?: 'N/A'}
 Rapport    : ${BUILD_URL}artifact/rapport_webgoat.csv
 Logs       : ${BUILD_URL}console
                         """
@@ -115,7 +127,7 @@ Logs       : ${BUILD_URL}console
 Build      : ${BUILD_NUMBER}
 Job        : ${JOB_NAME}
 Status     : ECHEC
-Commit     : ${GIT_COMMIT}
+Commit     : ${env.GIT_COMMIT ?: 'N/A'}
 Logs       : ${BUILD_URL}console
                         """
                     )
@@ -125,8 +137,10 @@ Logs       : ${BUILD_URL}console
             }
         }
         always {
-            sh 'docker system prune -f || true'
-            echo '=== Nettoyage Docker termine ==='
+            node('built-in') {
+                sh 'docker system prune -f || true'
+                echo '=== Nettoyage Docker termine ==='
+            }
         }
     }
 }
