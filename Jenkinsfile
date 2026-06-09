@@ -31,21 +31,22 @@ pipeline {
             }
         }
         stage('Export - Rapport CSV') {
-    steps {
-        echo '=== Export des issues SonarQube ==='
-        sh '''
-            curl -s -u admin:$SONAR_TOKEN \
-                "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=1" \
-                -o result1.json
-            curl -s -u admin:$SONAR_TOKEN \
-                "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=2" \
-                -o result2.json
-        '''
-        writeFile file: 'gen.py', text: 'import json\nissues = []\nfor f in ["result1.json", "result2.json"]:\n    try:\n        with open(f) as fp:\n            issues.extend(json.load(fp).get("issues", []))\n    except Exception as e:\n        print("Erreur: " + str(e))\nwith open("rapport_webgoat.csv", "w") as out:\n    out.write("Severity,Message,File,Line\\n")\n    for i in issues:\n        msg = i.get("message", "").replace(",", ";")\n        out.write(i.get("severity","") + "," + msg + "," + i.get("component","") + "," + str(i.get("line","")) + "\\n")\nprint("Issues exportees: " + str(len(issues)))\n'
-        sh 'python3 gen.py'
-        archiveArtifacts artifacts: 'rapport_webgoat.csv,result*.json', fingerprint: true
+            steps {
+                echo '=== Export des issues SonarQube ==='
+                sh '''
+                    curl -s -u admin:$SONAR_TOKEN \
+                        "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=1" \
+                        -o result1.json
+                    curl -s -u admin:$SONAR_TOKEN \
+                        "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=2" \
+                        -o result2.json
+                '''
+                writeFile file: 'gen.py', text: 'import json\nissues = []\nfor f in ["result1.json", "result2.json"]:\n    try:\n        with open(f) as fp:\n            issues.extend(json.load(fp).get("issues", []))\n    except Exception as e:\n        print("Erreur: " + str(e))\nwith open("rapport_webgoat.csv", "w") as out:\n    out.write("Severity,Message,File,Line\\n")\n    for i in issues:\n        msg = i.get("message", "").replace(",", ";")\n        out.write(i.get("severity","") + "," + msg + "," + i.get("component","") + "," + str(i.get("line","")) + "\\n")\nprint("Issues exportees: " + str(len(issues)))\n'
+                sh 'python3 gen.py'
+                archiveArtifacts artifacts: 'rapport_webgoat.csv,result*.json', fingerprint: true
+            }
+        }
     }
-}
     post {
         success {
             echo '=== Build reussi ==='
