@@ -49,86 +49,98 @@ pipeline {
         // ETAPE 3 : Export des resultats en CSV
         // ─────────────────────────────────────────────
         stage('Export - Rapport CSV') {
-            steps {
+             steps {
                 echo '=== Export des issues SonarQube ==='
+        
                 sh '''
                     curl -s -u admin:${SONAR_TOKEN} \
                         "${SONAR_URL}/api/issues/search?projectKeys=${PROJECT_KEY}&ps=500&p=1" \
                         -o result1.json
-
+        
                     curl -s -u admin:${SONAR_TOKEN} \
                         "${SONAR_URL}/api/issues/search?projectKeys=${PROJECT_KEY}&ps=500&p=2" \
                         -o result2.json
-
-                    python3 -c "
+                '''
+        
+                sh '''
+                    python3 - << 'EOF' > rapport_webgoat.csv
 import json
+
 issues = []
-for f in ['result1.json', 'result2.json']:
+
+for f in ["result1.json", "result2.json"]:
     try:
         with open(f) as fp:
-            issues.extend(json.load(fp).get('issues', []))
-    except:
+            issues.extend(json.load(fp).get("issues", []))
+    except Exception:
         pass
-print('Severite,Message,Fichier,Ligne')
+
+print("Severity,Message,File,Line")
+
 for i in issues:
-    msg = i.get('message', '').replace(',', ';')
-    print(f\"{i.get('severity')},{msg},{i.get('component')},{i.get('line', '')}\")
-" > rapport_webgoat.csv
+    msg = i.get("message", "").replace(",", ";")
+    print(f"{i.get('severity')},{msg},{i.get('component')},{i.get('line', '')}")
+EOF
+        '''
 
-                    echo "=== Issues exportees : \$(wc -l < rapport_webgoat.csv) lignes ==="
-                '''
-                archiveArtifacts artifacts: '*.csv,*.json', fingerprint: true
-            }
-        }
+        sh 'wc -l rapport_webgoat.csv || true'
+
+        archiveArtifacts artifacts: 'rapport_webgoat.csv,result*.json', fingerprint: true
     }
+}
+   post {
+    success {
+        echo '=== Build reussi ==='
 
-    post {
-        success {
-            echo '=== Build reussi ==='
-            script {
-                try {
-                    emailext(
-                        to: 'astoudieng941@gmail.com',
-                        subject: "[Jenkins] Build #${BUILD_NUMBER} - SUCCES",
-                        body: """
+        script {
+            try {
+                emailext(
+                    to: 'astoudieng941@gmail.com',
+                    subject: "[Jenkins] Build #${BUILD_NUMBER} - SUCCES",
+                    body: """
 Build      : ${BUILD_NUMBER}
 Job        : ${JOB_NAME}
 Status     : SUCCES
 Commit     : ${env.GIT_COMMIT ?: 'N/A'}
-Rapport    : ${BUILD_URL}artifact/rapport_webgoat.csv
-Logs       : ${BUILD_URL}console
-                        """
-                    )
-                } catch(Exception e) {
-                    echo "Email non envoye : ${e.message}"
-                }
+
+📊 Rapport SonarQube + CSV généré
+📎 Pièce jointe disponible
+                    """,
+                    attachmentsPattern: 'rapport_webgoat.csv,result*.json',
+                    mimeType: 'text/html'
+                )
+            } catch(Exception e) {
+                echo "Email non envoyé : ${e.message}"
             }
         }
-        failure {
-            echo '=== Build echoue ==='
-            script {
-                try {
-                    emailext(
-                        to: 'astoudieng941@gmail.com',
-                        subject: "[Jenkins] Build #${BUILD_NUMBER} - ECHEC",
-                        body: """
+    }
+
+    failure {
+        echo '=== Build echoue ==='
+
+        script {
+            try {
+                emailext(
+                    to: 'astoudieng941@gmail.com',
+                    subject: "[Jenkins] Build #${BUILD_NUMBER} - ECHEC",
+                    body: """
 Build      : ${BUILD_NUMBER}
 Job        : ${JOB_NAME}
 Status     : ECHEC
 Commit     : ${env.GIT_COMMIT ?: 'N/A'}
-Logs       : ${BUILD_URL}console
-                        """
-                    )
-                } catch(Exception e) {
-                    echo "Email non envoye : ${e.message}"
-                }
+
+❌ Consulte les logs Jenkins
+                    """,
+                    mimeType: 'text/html'
+                )
+            } catch(Exception e) {
+                echo "Email non envoyé : ${e.message}"
             }
         }
-        always {
-            node('built-in') {
-                sh 'docker system prune -f || true'
-                echo '=== Nettoyage Docker termine ==='
-            }
-        }
+    }
+
+    always {
+        echo '=== Nettoyage Docker ==='
+        sh 'docker system prune -f || true'
     }
 }
