@@ -44,7 +44,7 @@ pipeline {
                     // CORRECTION : Utilisation de l'URL locale complète vers le port 9000 de SonarQube
                     sh '''
                         # 1. Extraction des vulnérabilités au format JSON brut via l'API Web
-                        curl -s -u ${SONAR_TOKEN}: "http://127.0.0" -o raw_issues.json
+                        curl -s -u ${SONAR_TOKEN}: "http://localhost:9000" -o raw_issues.json
                         
                         # 2. Construction de la structure de la page HTML
                         echo "<html><head><style>
