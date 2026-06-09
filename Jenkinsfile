@@ -14,72 +14,133 @@ pipeline {
 
     stages {
 
+        // ─────────────────────────────────────────────
+        // ETAPE 1 : Checkout shallow (repo volumineux)
+        // ─────────────────────────────────────────────
         stage('Checkout') {
             steps {
-                echo '=== Recuperation du code ==='
-                checkout scm
+                echo '=== Recuperation du code source ==='
+                checkout([$class: 'GitSCM',
+                    branches: [[name: '*/main']],
+                    extensions: [
+                        [$class: 'CloneOption',
+                            shallow: true,
+                            depth: 1,
+                            timeout: 30]
+                    ],
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/Ndeyeghhfjh/WebGoat.git'
+                    ]]
+                ])
+                echo '=== Code recupere ==='
             }
         }
 
+        // ─────────────────────────────────────────────
+        // ETAPE 2 : Analyse SAST avec SonarQube
+        // ─────────────────────────────────────────────
         stage('SAST - SonarQube') {
             steps {
-                echo '=== Analyse SonarQube ==='
+                echo '=== Lancement analyse SonarQube ==='
                 sh '''
-                    docker run --rm --network host \
+                    docker run --rm \
+                        --network host \
                         -v $WORKSPACE:/usr/src \
                         sonarsource/sonar-scanner-cli \
-                        -Dsonar.projectKey=webgoat-sast \
+                        -Dsonar.projectKey=${PROJECT_KEY} \
                         -Dsonar.sources=. \
-                        -Dsonar.host.url=http://localhost:9000 \
-                        -Dsonar.token=$SONAR_TOKEN
+                        -Dsonar.exclusions=**/node_modules/**,**/*.xml,**/test/** \
+                        -Dsonar.host.url=${SONAR_URL} \
+                        -Dsonar.token=${SONAR_TOKEN}
                 '''
+                echo "=== Resultats : ${SONAR_URL}/dashboard?id=${PROJECT_KEY} ==="
             }
         }
 
-        stage('Export - Rapport HTML') {
+        // ─────────────────────────────────────────────
+        // ETAPE 3 : Export des resultats en CSV
+        // ─────────────────────────────────────────────
+        stage('Export - Rapport CSV') {
             steps {
-                echo '=== Generation du rapport ==='
+                echo '=== Export des issues SonarQube ==='
                 sh '''
-                    curl -s -u admin:admin \
-                        "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=1" \
+                    curl -s -u admin:${SONAR_TOKEN} \
+                        "${SONAR_URL}/api/issues/search?projectKeys=${PROJECT_KEY}&ps=500&p=1" \
                         -o result1.json
 
-                    curl -s -u admin:admin \
-                        "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=2" \
+                    curl -s -u admin:${SONAR_TOKEN} \
+                        "${SONAR_URL}/api/issues/search?projectKeys=${PROJECT_KEY}&ps=500&p=2" \
                         -o result2.json
 
-                    python3 /home/jenkins/juice-shop/generate_pdf.py || true
-                    cp rapport_sonarqube.pdf rapport_webgoat.pdf || true
-                '''
+                    python3 -c "
+import json
+issues = []
+for f in ['result1.json', 'result2.json']:
+    try:
+        with open(f) as fp:
+            issues.extend(json.load(fp).get('issues', []))
+    except:
+        pass
+print('Severite,Message,Fichier,Ligne')
+for i in issues:
+    msg = i.get('message', '').replace(',', ';')
+    print(f\"{i.get('severity')},{msg},{i.get('component')},{i.get('line', '')}\")
+" > rapport_webgoat.csv
 
-                archiveArtifacts artifacts: '*.pdf,*.json', fingerprint: true
+                    echo "=== Issues exportees : $(wc -l < rapport_webgoat.csv) lignes ==="
+                '''
+                archiveArtifacts artifacts: '*.csv,*.json', fingerprint: true
             }
         }
     }
 
     post {
-        always {
-            emailext(
-                to: 'astoudieng941@gmail.com',
-                subject: "[Jenkins] Build #${BUILD_NUMBER} - ${currentBuild.currentResult}",
-                body: """
-Build       : ${BUILD_NUMBER}
-Job         : ${JOB_NAME}
-Status      : ${currentBuild.currentResult}
-Commit      : ${GIT_COMMIT}
-Rapport     : ${BUILD_URL}artifact/rapport_webgoat.pdf
-Logs        : ${BUILD_URL}console
-                """,
-                attachmentsPattern: '*.pdf'
-            )
-        }
-
         success {
             echo '=== Build reussi ==='
+            script {
+                try {
+                    emailext(
+                        to: 'astoudieng941@gmail.com',
+                        subject: "[Jenkins] Build #${BUILD_NUMBER} - SUCCES",
+                        body: """
+Build      : ${BUILD_NUMBER}
+Job        : ${JOB_NAME}
+Status     : SUCCES
+Commit     : ${env.GIT_COMMIT ?: 'N/A'}
+Rapport    : ${BUILD_URL}artifact/rapport_webgoat.csv
+Logs       : ${BUILD_URL}console
+                        """
+                    )
+                } catch(Exception e) {
+                    echo "Email non envoye : ${e.message}"
+                }
+            }
         }
-
         failure {
             echo '=== Build echoue ==='
+            script {
+                try {
+                    emailext(
+                        to: 'astoudieng941@gmail.com',
+                        subject: "[Jenkins] Build #${BUILD_NUMBER} - ECHEC",
+                        body: """
+Build      : ${BUILD_NUMBER}
+Job        : ${JOB_NAME}
+Status     : ECHEC
+Commit     : ${env.GIT_COMMIT ?: 'N/A'}
+Logs       : ${BUILD_URL}console
+                        """
+                    )
+                } catch(Exception e) {
+                    echo "Email non envoye : ${e.message}"
+                }
+            }
+        }
+        always {
+            node('built-in') {
+                sh 'docker system prune -f || true'
+                echo '=== Nettoyage Docker termine ==='
+            }
         }
     }
 }
