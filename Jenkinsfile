@@ -1,10 +1,11 @@
 pipeline {
+
     agent any
 
     environment {
         SONAR_URL   = 'http://localhost:9000'
         PROJECT_KEY = 'webgoat-sast'
-        SONAR_TOKEN = credentials('webgoat-token')
+        SONAR_TOKEN = credentials('sonar-token')
     }
 
     triggers {
@@ -28,34 +29,66 @@ pipeline {
                         --network host \
                         -v $WORKSPACE:/usr/src \
                         sonarsource/sonar-scanner-cli \
-                        -Dsonar.projectKey=webgoat-sast \
+                        -Dsonar.projectKey=${PROJECT_KEY} \
                         -Dsonar.sources=. \
                         -Dsonar.exclusions=**/node_modules/**,**/*.xml,**/test/** \
-                        -Dsonar.host.url=http://localhost:9000 \
-                        -Dsonar.token=$SONAR_TOKEN
+                        -Dsonar.host.url=${SONAR_URL} \
+                        -Dsonar.token=${SONAR_TOKEN}
                 '''
+                echo "=== Resultats : ${SONAR_URL}/dashboard?id=${PROJECT_KEY} ==="
             }
         }
 
         stage('Export - Rapport CSV') {
             steps {
                 echo '=== Export des issues SonarQube ==='
-                sh '''
-                    curl -s -u admin:$SONAR_TOKEN \
-                        "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=1" \
+                sh """
+                    curl -s -u admin:${SONAR_TOKEN} \
+                        "${SONAR_URL}/api/issues/search?projectKeys=${PROJECT_KEY}&ps=500&p=1" \
                         -o result1.json
-                    curl -s -u admin:$SONAR_TOKEN \
-                        "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=2" \
+
+                    curl -s -u admin:${SONAR_TOKEN} \
+                        "${SONAR_URL}/api/issues/search?projectKeys=${PROJECT_KEY}&ps=500&p=2" \
                         -o result2.json
-                '''
-                sh '''
-                    docker run --rm \
-                        -v $WORKSPACE:/data \
-                        -w /data \
-                        python:3.11-alpine \
-                        python3 generate_rapport.py
-                '''
-                archiveArtifacts artifacts: 'rapport_webgoat.csv,result*.json', fingerprint: true
+
+                    python3 - << 'PYEOF'
+import json
+issues = []
+for f in ['result1.json', 'result2.json']:
+    try:
+        with open(f) as fp:
+            issues.extend(json.load(fp).get('issues', []))
+    except Exception as e:
+        print(f'Erreur lecture {f}: {e}')
+print('Severite,Message,Fichier,Ligne')
+for i in issues:
+    msg = i.get('message', '').replace(',', ';')
+    sev = i.get('severity', '')
+    comp = i.get('component', '')
+    line = str(i.get('line', ''))
+    print(f'{sev},{msg},{comp},{line}')
+PYEOF
+                """
+                sh "mv /dev/stdin rapport_webgoat.csv || true"
+                sh """
+                    python3 - << 'PYEOF'
+import json
+issues = []
+for f in ['result1.json', 'result2.json']:
+    try:
+        with open(f) as fp:
+            issues.extend(json.load(fp).get('issues', []))
+    except:
+        pass
+with open('rapport_webgoat.csv', 'w') as out:
+    out.write('Severite,Message,Fichier,Ligne\\n')
+    for i in issues:
+        msg = i.get('message', '').replace(',', ';').replace('\\n', ' ')
+        out.write(f"{i.get('severity')},{msg},{i.get('component')},{i.get('line', '')}\\n")
+print(f'rapport_webgoat.csv genere : {len(issues)} issues')
+PYEOF
+                """
+                archiveArtifacts artifacts: '*.csv,*.json', fingerprint: true
             }
         }
     }
@@ -67,7 +100,7 @@ pipeline {
                 try {
                     emailext(
                         to: 'astoudieng941@gmail.com',
-                        subject: "[Jenkins] Build #${BUILD_NUMBER} - SUCCES - ${JOB_NAME}",
+                        subject: "[Jenkins] Build #${BUILD_NUMBER} - SUCCES",
                         body: """
 Build   : ${BUILD_NUMBER}
 Job     : ${JOB_NAME}
@@ -75,9 +108,7 @@ Status  : SUCCES
 Commit  : ${env.GIT_COMMIT ?: 'N/A'}
 Rapport : ${BUILD_URL}artifact/rapport_webgoat.csv
 Logs    : ${BUILD_URL}console
-                        """,
-                        attachmentsPattern: 'rapport_webgoat.csv',
-                        mimeType: 'text/plain'
+                        """
                     )
                 } catch(Exception e) {
                     echo "Email non envoye : ${e.message}"
@@ -90,15 +121,14 @@ Logs    : ${BUILD_URL}console
                 try {
                     emailext(
                         to: 'astoudieng941@gmail.com',
-                        subject: "[Jenkins] Build #${BUILD_NUMBER} - ECHEC - ${JOB_NAME}",
+                        subject: "[Jenkins] Build #${BUILD_NUMBER} - ECHEC",
                         body: """
 Build   : ${BUILD_NUMBER}
 Job     : ${JOB_NAME}
 Status  : ECHEC
 Commit  : ${env.GIT_COMMIT ?: 'N/A'}
 Logs    : ${BUILD_URL}console
-                        """,
-                        mimeType: 'text/plain'
+                        """
                     )
                 } catch(Exception e) {
                     echo "Email non envoye : ${e.message}"
