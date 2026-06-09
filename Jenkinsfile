@@ -1,13 +1,13 @@
 pipeline {
-    agent { label 'Agent-1' } // Exécution stricte sur votre agent désigné
+    agent { label 'Agent-1' } // Exécution stricte sur le nœud nommé Agent-1
     
     triggers {
-        githubPush() // Déclenchement 100% automatisé par le webhook GitHub
+        githubPush() // Déclenchement automatisé par le webhook GitHub
     }
     
     environment {
         SONAR_SERVER = 'SonarQube'
-        RECEIVER_EMAIL = 'astoudieng941@gmail.com' // Votre adresse de réception
+        RECEIVER_EMAIL = 'astoudieng941@gmail.com'
     }
     
     stages {
@@ -18,20 +18,18 @@ pipeline {
             }
         }
         
-        stage('SAST - SonarQube') {
+        stage('SAST - SonarQube (Maven)') {
             steps {
-                echo "=== Lancement analyse SonarQube ==="
+                echo "=== Lancement analyse SonarQube via Maven ==="
                 withCredentials([string(credentialsId: 'webgoat-token', variable: 'SONAR_TOKEN')]) {
-                    // CORRECTION : Remplacement du tag 8.0 par latest & Remplacement des doubles cotes par des simples cotes
+                    // RESOLUTION : Utilisation du wrapper Maven natif de WebGoat pour indexer et analyser le code Java/JS
                     sh '''
-                        docker run --rm --network host \
-                        -v "${WORKSPACE}:/usr/src" \
-                        -w /usr/src \
-                        sonarsource/sonar-scanner-cli:latest \
+                        chmod +x ./mvnw
+                        ./mvnw clean verify sonar:sonar \
                         -Dsonar.projectKey=webgoat-sast \
-                        -Dsonar.sources=. \
-                        -Dsonar.host.url=http://127.0.0.1:9000 \
+                        -Dsonar.host.url=http://localhost:9000 \
                         -Dsonar.token=${SONAR_TOKEN} \
+                        -Dmaven.test.skip=true \
                         -Dsonar.scm.disabled=true
                     '''
                 }
@@ -60,10 +58,10 @@ pipeline {
                         </style></head><body>" > rapport_sast.html
                         
                         echo "<h1>Rapport de Sécurité SAST - Projet WebGoat</h1>" >> rapport_sast.html
-                        echo "<div class='summary'><p><strong>Statut :</strong> Analyse Terminée avec Succès</p><p><strong>Outil :</strong> SonarScanner CLI</p></div>" >> rapport_sast.html
+                        echo "<div class='summary'><p><strong>Statut :</strong> Analyse Terminée avec Succès</p><p><strong>Outil :</strong> SonarQube Maven Plugin</p></div>" >> rapport_sast.html
                         echo "<table><tr><th>Composant / Fichier</th><th>Message de la Faille</th><th>Sévérité</th><th>Règle</th></tr>" >> rapport_sast.html
                         
-                        # Découpage et extraction des champs clés du JSON pour alimenter le tableau HTML
+                        # Extraction des champs du JSON pour alimenter le tableau HTML
                         cat raw_issues.json | grep -o '"component":"[^"]*","project":"[^"]*","message":"[^"]*","severity":"[^"]*","rule":"[^"]*"' | while read -r line; do
                             component=$(echo "$line" | sed -E 's/.*"component":"([^"]*)".*/\1/' | cut -d':' -f2)
                             message=$(echo "$line" | sed -E 's/.*"message":"([^"]*)".*/\1/')
@@ -83,7 +81,7 @@ pipeline {
     post {
         always {
             echo "=== Envoi du rapport d'erreur HTML par Mail ==="
-            // Utilisation d'un bloc catchError pour éviter que le pipeline soit marqué en échec total si le SMTP est capricieux
+            // Bloc de protection pour empêcher le crash du pipeline complet si votre réseau ou SMTP bloque
             catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
                 emailext (
                     to: "${env.RECEIVER_EMAIL}",
