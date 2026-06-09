@@ -1,5 +1,4 @@
 pipeline {
-
     agent any
 
     environment {
@@ -30,6 +29,7 @@ pipeline {
                         sonarsource/sonar-scanner-cli \
                         -Dsonar.projectKey=webgoat-sast \
                         -Dsonar.sources=. \
+                        -Dsonar.exclusions=**/node_modules/**,**/*.xml,**/test/** \
                         -Dsonar.host.url=http://localhost:9000 \
                         -Dsonar.token=$SONAR_TOKEN
                 '''
@@ -40,18 +40,15 @@ pipeline {
             steps {
                 echo '=== Generation du rapport ==='
                 sh '''
-                    curl -s -u admin:admin \
+                    curl -s -u admin:$SONAR_TOKEN \
                         "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=1" \
                         -o result1.json
-
-                    curl -s -u admin:admin \
+                    curl -s -u admin:$SONAR_TOKEN \
                         "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=2" \
                         -o result2.json
-
                     python3 /home/jenkins/juice-shop/generate_pdf.py || true
                     cp rapport_sonarqube.pdf rapport_webgoat.pdf || true
                 '''
-
                 archiveArtifacts artifacts: '*.pdf,*.json', fingerprint: true
             }
         }
@@ -73,13 +70,7 @@ Logs        : ${BUILD_URL}console
                 attachmentsPattern: '*.pdf'
             )
         }
-
-        success {
-            echo '=== Build reussi ==='
-        }
-
-        failure {
-            echo '=== Build echoue ==='
-        }
+        success { echo '=== Build reussi ===' }
+        failure { echo '=== Build echoue ===' }
     }
 }
