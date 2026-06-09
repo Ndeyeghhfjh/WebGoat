@@ -63,7 +63,7 @@ pipeline {
                 '''
         
                 sh '''
-                    python3 - << 'EOF' > rapport_webgoat.csv
+python3 - << EOF > rapport_webgoat.csv
 import json
 
 issues = []
@@ -81,7 +81,7 @@ for i in issues:
     msg = i.get("message", "").replace(",", ";")
     print(f"{i.get('severity')},{msg},{i.get('component')},{i.get('line', '')}")
 EOF
-        '''
+'''
 
         sh 'wc -l rapport_webgoat.csv || true'
 
@@ -107,7 +107,7 @@ Commit     : ${env.GIT_COMMIT ?: 'N/A'}
 📎 Pièce jointe disponible
                     """,
                     attachmentsPattern: 'rapport_webgoat.csv,result*.json',
-                    mimeType: 'text/html'
+                    mimeType: 'text/plain'
                 )
             } catch(Exception e) {
                 echo "Email non envoyé : ${e.message}"
@@ -131,7 +131,7 @@ Commit     : ${env.GIT_COMMIT ?: 'N/A'}
 
 ❌ Consulte les logs Jenkins
                     """,
-                    mimeType: 'text/html'
+                   mimeType: 'text/plain'
                 )
             } catch(Exception e) {
                 echo "Email non envoyé : ${e.message}"
