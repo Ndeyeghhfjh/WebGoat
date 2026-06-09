@@ -39,7 +39,7 @@ pipeline {
                         -Dsonar.sources=. \
                         -Dsonar.exclusions=**/node_modules/**,**/*.xml,**/test/** \
                         -Dsonar.host.url=${SONAR_URL} \
-                        -Dsonar.token=${WEBGOAT_TOKEN}
+                        -Dsonar.token=${SONAR_TOKEN}
                 '''
                 echo "=== Resultats : ${SONAR_URL}/dashboard?id=${PROJECT_KEY} ==="
             }
@@ -52,11 +52,11 @@ pipeline {
             steps {
                 echo '=== Export des issues SonarQube ==='
                 sh '''
-                    curl -s -u admin:${WEBGOAT_TOKEN} \
+                    curl -s -u admin:${SONAR_TOKEN} \
                         "${SONAR_URL}/api/issues/search?projectKeys=${PROJECT_KEY}&ps=500&p=1" \
                         -o result1.json
 
-                    curl -s -u admin:${WEBGOAT_TOKEN} \
+                    curl -s -u admin:${SONAR_TOKEN} \
                         "${SONAR_URL}/api/issues/search?projectKeys=${PROJECT_KEY}&ps=500&p=2" \
                         -o result2.json
 
