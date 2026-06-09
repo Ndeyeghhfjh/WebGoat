@@ -20,45 +20,60 @@ pipeline {
             }
         }
 
-        stage('SAST - SonarQube') {
-            steps {
-                echo '=== Lancement analyse SonarQube ==='
-                sh '''
-                    docker run --rm \
-                        --network host \
-                        -v $WORKSPACE:/usr/src \
-                        sonarsource/sonar-scanner-cli \
-                        -Dsonar.projectKey=webgoat-sast \
-                        -Dsonar.sources=. \
-                        -Dsonar.exclusions=**/node_modules/**,**/*.xml,**/test/** \
-                        -Dsonar.host.url=http://localhost:9000 \
-                        -Dsonar.token=$SONAR_TOKEN
-                '''
-            }
-        }
-
-        stage('Export - Rapport CSV') {
-            steps {
-                echo '=== Export des issues SonarQube ==='
-                sh '''
-                    curl -s -u admin:$SONAR_TOKEN \
-                        "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=1" \
-                        -o result1.json
-                    curl -s -u admin:$SONAR_TOKEN \
-                        "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=2" \
-                        -o result2.json
-                '''
-                sh '''
-                    docker run --rm \
-                        -v $WORKSPACE:/data \
-                        -w /data \
-                        python:3.11-alpine \
-                        python3 generate_rapport.py
-                '''
-                archiveArtifacts artifacts: 'rapport_webgoat.csv,result*.json', fingerprint: true
-            }
-        }
+       stage('SAST - SonarQube') {
+    steps {
+        echo '=== Lancement analyse SonarQube ==='
+        sh '''
+            docker run --rm \
+                --network host \
+                -v $WORKSPACE:/usr/src \
+                sonarsource/sonar-scanner-cli \
+                -Dsonar.projectKey=webgoat-sast \
+                -Dsonar.sources=. \
+                -Dsonar.host.url=http://localhost:9000 \
+                -Dsonar.token=$SONAR_TOKEN \
+                -Dsonar.scm.disabled=true
+        '''
     }
+}
+        stage('Export - Rapport CSV') {
+    steps {
+        echo '=== Export des issues SonarQube ==='
+        sh '''
+            curl -s -u admin:$SONAR_TOKEN \
+                "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=1" \
+                -o result1.json
+            curl -s -u admin:$SONAR_TOKEN \
+                "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=2" \
+                -o result2.json
+        '''
+        sh '''
+            cat > /tmp/gen.py << 'PYEOF'
+import json
+issues = []
+for f in ["result1.json", "result2.json"]:
+    try:
+        with open(f) as fp:
+            issues.extend(json.load(fp).get("issues", []))
+    except Exception:
+        pass
+with open("rapport_webgoat.csv", "w") as out:
+    out.write("Severity,Message,File,Line\n")
+    for i in issues:
+        msg = i.get("message", "").replace(",", ";")
+        out.write(i.get("severity","") + "," + msg + "," + i.get("component","") + "," + str(i.get("line","")) + "\n")
+print("Issues: " + str(len(issues)))
+PYEOF
+            docker run --rm \
+                -v $WORKSPACE:/data \
+                -v /tmp/gen.py:/gen.py \
+                -w /data \
+                python:3.11-alpine \
+                python3 /gen.py
+        '''
+        archiveArtifacts artifacts: 'rapport_webgoat.csv,result*.json', fingerprint: true
+    }
+}
 
     post {
         success {
