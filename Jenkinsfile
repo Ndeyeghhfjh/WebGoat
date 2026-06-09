@@ -16,37 +16,91 @@ pipeline {
             }
         }
         stage('SAST - SonarQube') {
-            steps {
-                echo '=== Lancement analyse SonarQube ==='
-                sh '''
-                    docker run --rm --network host \
-                        -v $WORKSPACE:/usr/src \
-                        sonarsource/sonar-scanner-cli \
-                        -Dsonar.projectKey=webgoat-sast \
-                        -Dsonar.sources=. \
-                        -Dsonar.host.url=http://localhost:9000 \
-                        -Dsonar.token=$SONAR_TOKEN \
-                        -Dsonar.scm.disabled=true
-                '''
-            }
-        }
-        stage('Export - Rapport CSV') {
-            steps {
-                echo '=== Export des issues SonarQube ==='
-                sh '''
-                    curl -s -u admin:$SONAR_TOKEN \
-                        "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=1" \
-                        -o result1.json
-                    curl -s -u admin:$SONAR_TOKEN \
-                        "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=2" \
-                        -o result2.json
-                '''
-                writeFile file: 'gen.py', text: 'import json\nissues = []\nfor f in ["result1.json", "result2.json"]:\n    try:\n        with open(f) as fp:\n            issues.extend(json.load(fp).get("issues", []))\n    except Exception as e:\n        print("Erreur: " + str(e))\nwith open("rapport_webgoat.csv", "w") as out:\n    out.write("Severity,Message,File,Line\\n")\n    for i in issues:\n        msg = i.get("message", "").replace(",", ";")\n        out.write(i.get("severity","") + "," + msg + "," + i.get("component","") + "," + str(i.get("line","")) + "\\n")\nprint("Issues exportees: " + str(len(issues)))\n'
-                sh 'python3 gen.py'
-                archiveArtifacts artifacts: 'rapport_webgoat.csv,result*.json', fingerprint: true
-            }
-        }
-    }
+steps {
+echo '=== Verification du workspace ==='
+
+    sh '''
+        pwd
+        ls -la
+        find . -type f | head -50
+    '''
+
+    echo '=== Lancement analyse SonarQube ==='
+
+    sh '''
+        docker run --rm \
+            --network host \
+            -v "$WORKSPACE:/usr/src" \
+            sonarsource/sonar-scanner-cli \
+            -Dsonar.projectKey=${PROJECT_KEY} \
+            -Dsonar.sources=. \
+            -Dsonar.exclusions=**/node_modules/**,**/target/**,**/.git/** \
+            -Dsonar.host.url=${SONAR_URL} \
+            -Dsonar.token=${SONAR_TOKEN} \
+            -Dsonar.scm.disabled=true
+    '''
+}
+       stage('Export - Rapport CSV') {
+steps {
+echo '=== Export des issues SonarQube ==='
+
+```
+    sh '''
+        curl -s -u ${SONAR_TOKEN}: \
+        "${SONAR_URL}/api/issues/search?projectKeys=${PROJECT_KEY}&ps=500&p=1" \
+        -o result1.json
+
+        echo "=== Aperçu result1.json ==="
+        head -20 result1.json
+
+        curl -s -u ${SONAR_TOKEN}: \
+        "${SONAR_URL}/api/issues/search?projectKeys=${PROJECT_KEY}&ps=500&p=2" \
+        -o result2.json
+    '''
+
+    writeFile file: 'gen.py', text: '''
+```
+
+import json
+
+issues = []
+
+for f in ["result1.json", "result2.json"]:
+try:
+with open(f, "r", encoding="utf-8") as fp:
+data = json.load(fp)
+issues.extend(data.get("issues", []))
+except Exception as e:
+print("Erreur:", e)
+
+with open("rapport_webgoat.csv", "w", encoding="utf-8") as out:
+out.write("Severity,Message,File,Line\n")
+
+```
+for i in issues:
+    msg = i.get("message", "").replace(",", ";")
+    out.write(
+        f"{i.get('severity','')},"
+        f"{msg},"
+        f"{i.get('component','')},"
+        f"{i.get('line','')}\\n"
+    )
+```
+
+print(f"Issues exportees: {len(issues)}")
+'''
+
+```
+    sh 'python3 gen.py'
+
+    sh 'wc -l rapport_webgoat.csv || true'
+
+    archiveArtifacts artifacts: 'rapport_webgoat.csv,result*.json', fingerprint: true
+}
+```
+
+}
+
     post {
         success {
             echo '=== Build reussi ==='
