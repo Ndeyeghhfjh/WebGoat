@@ -1,8 +1,8 @@
 pipeline {
-    agent { label 'Agent-1' } // Assignation stricte à votre agent nommé
+    agent { label 'Agent-1' } // Exécution stricte sur votre nœud esclave nommé Agent-1
     
     triggers {
-        githubPush() // Déclenchement 100% automatisé par le webhook GitHub
+        githubPush() // Déclenchement automatique lié au Webhook GitHub lors d'un commit
     }
     
     environment {
@@ -17,25 +17,22 @@ pipeline {
                 checkout scm
             }
         }
-        stage('Build') {
-            steps {
-                sh './mvnw clean compile'
-            }
-        }
         
         stage('SAST - SonarQube Analyser') {
             steps {
-                echo '=== Build + Analyse SonarQube ==='
+                echo "=== Lancement analyse SonarQube du code source ==="
                 withCredentials([string(credentialsId: 'webgoat-token', variable: 'SONAR_TOKEN')]) {
+                    // RESOLUTION : Forcer le dossier binaire sur la racine (.) pour éviter l'erreur de dossier manquant
                     sh '''
                         chmod +x ./mvnw
-                        ./mvnw clean compile sonar:sonar \
-                            -Dsonar.projectKey=webgoat-sast \
-                            -Dsonar.host.url=http://127.0.0.1:9000 \
-                            -Dsonar.token=$SONAR_TOKEN \
-                            -Dsonar.sources=src/main \
-                            -Dsonar.java.binaries=target/classes \
-                            -Dsonar.scm.disabled=true
+                        ./mvnw sonar:sonar \
+                        -Dsonar.projectKey=webgoat-sast \
+                        -Dsonar.host.url=http://127.0.0.1:9000 \
+                        -Dsonar.token=${SONAR_TOKEN} \
+                        -Dsonar.sources=src/main \
+                        -Dsonar.java.binaries=. \
+                        -Dsonar.scm.disabled=true \
+                        -Dsonar.readiness.timeout=120
                     '''
                 }
             }
@@ -46,10 +43,10 @@ pipeline {
                 echo "=== Génération du Rapport d'Anomalies au format HTML ==="
                 withCredentials([string(credentialsId: 'webgoat-token', variable: 'SONAR_TOKEN')]) {
                     sh '''
-                        # Récupération des vulnérabilités via l'API Web de SonarQube
+                        # Extraction des vulnérabilités au format JSON brut via l'API SonarQube
                         curl -s -u ${SONAR_TOKEN}: "http://127.0.0" -o raw_issues.json
                         
-                        # Construction de l'en-tête du document HTML
+                        # Construction dynamique du rapport de sécurité HTML
                         echo "<html><head><style>
                             body { font-family: Arial, sans-serif; margin: 30px; background-color: #f4f6f9; }
                             h1 { color: #2c3e50; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; }
@@ -63,7 +60,7 @@ pipeline {
                         </style></head><body>" > rapport_sast.html
                         
                         echo "<h1>Rapport de Sécurité SAST - Projet WebGoat</h1>" >> rapport_sast.html
-                        echo "<div class='summary'><p><strong>Statut :</strong> Analyse Automatique Terminée</p><p><strong>Outil :</strong> SonarQube Core Scanner</p></div>" >> rapport_sast.html
+                        echo "<div class='summary'><p><strong>Statut :</strong> Analyse Automatique Terminée</p><p><strong>Outil :</strong> SonarQube Scan</p></div>" >> rapport_sast.html
                         echo "<table><tr><th>Composant / Fichier</th><th>Message de la Faille</th><th>Sévérité</th><th>Règle</th></tr>" >> rapport_sast.html
                         
                         # Extraction et structuration des lignes du tableau HTML
@@ -92,18 +89,19 @@ pipeline {
                     subject: "Rapport HTML SAST Automatique WebGoat - Build #${env.BUILD_NUMBER}",
                     body: """Bonjour l'équipe,
                     
-                    Le pipeline de sécurité s'est déclenché de manière 100% automatique suite à votre commit sur GitHub.
+                    Le pipeline de sécurité s'est déclenché automatiquement suite au commit sur GitHub.
                     
-                    L'analyse statique du code de WebGoat est maintenant terminée. Vous trouverez en pièce jointe le rapport d'erreurs complet formaté en HTML.
+                    L'analyse statique du code de WebGoat est terminée. Vous trouverez en pièce jointe le rapport complet au format HTML.
                     
-                    👉 Lien vers votre interface SonarQube : http://localhost:9000/dashboard?id=webgoat-sast
+                    Statut de l'intégration : ${currentBuild.currentResult}
+                    👉 Accès à l'IHM SonarQube : http://localhost:9000/dashboard?id=webgoat-sast
                     
                     Cordialement,
                     Votre Automation Agent-1.""",
                     attachmentsPattern: 'rapport_sast.html'
                 )
             }
-            cleanWs() // Nettoyage de l'espace de travail sur Agent-1
+            cleanWs() // Purgation propre de l'espace de travail sur l'Agent-1
         }
     }
 }
