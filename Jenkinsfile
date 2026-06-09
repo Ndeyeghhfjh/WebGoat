@@ -1,8 +1,8 @@
 pipeline {
-    agent { label 'Agent-1' } // Exécution stricte sur votre nœud esclave nommé Agent-1
+    agent { label 'Agent-1' } // Exécution stricte sur l'Agent-1
     
     triggers {
-        githubPush() // Déclenchement automatique lié au Webhook GitHub lors d'un commit
+        githubPush() // Déclenchement automatique par webhook GitHub lors d'un commit
     }
     
     environment {
@@ -22,7 +22,6 @@ pipeline {
             steps {
                 echo "=== Lancement analyse SonarQube du code source ==="
                 withCredentials([string(credentialsId: 'webgoat-token', variable: 'SONAR_TOKEN')]) {
-                    // RESOLUTION : Forcer le dossier binaire sur la racine (.) pour éviter l'erreur de dossier manquant
                     sh '''
                         chmod +x ./mvnw
                         ./mvnw sonar:sonar \
@@ -42,11 +41,12 @@ pipeline {
             steps {
                 echo "=== Génération du Rapport d'Anomalies au format HTML ==="
                 withCredentials([string(credentialsId: 'webgoat-token', variable: 'SONAR_TOKEN')]) {
+                    // CORRECTION : Utilisation de l'URL locale complète vers le port 9000 de SonarQube
                     sh '''
-                        # Extraction des vulnérabilités au format JSON brut via l'API SonarQube
+                        # 1. Extraction des vulnérabilités au format JSON brut via l'API Web
                         curl -s -u ${SONAR_TOKEN}: "http://127.0.0" -o raw_issues.json
                         
-                        # Construction dynamique du rapport de sécurité HTML
+                        # 2. Construction de la structure de la page HTML
                         echo "<html><head><style>
                             body { font-family: Arial, sans-serif; margin: 30px; background-color: #f4f6f9; }
                             h1 { color: #2c3e50; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; }
@@ -63,14 +63,14 @@ pipeline {
                         echo "<div class='summary'><p><strong>Statut :</strong> Analyse Automatique Terminée</p><p><strong>Outil :</strong> SonarQube Scan</p></div>" >> rapport_sast.html
                         echo "<table><tr><th>Composant / Fichier</th><th>Message de la Faille</th><th>Sévérité</th><th>Règle</th></tr>" >> rapport_sast.html
                         
-                        # Extraction et structuration des lignes du tableau HTML
+                        # 3. Extraction et structuration des lignes du tableau HTML
                         cat raw_issues.json | grep -o '"component":"[^"]*","project":"[^"]*","message":"[^"]*","severity":"[^"]*","rule":"[^"]*"' | while read -r line; do
-                            component=$(echo "$line" | sed -E 's/.*"component":"([^"]*)".*/\\1/' | cut -d':' -f2)
-                            message=$(echo "$line" | sed -E 's/.*"message":"([^"]*)".*/\1/')
-                            severity=$(echo "$line" | sed -E 's/.*"severity":"([^"]*)".*/\1/')
-                            rule=$(echo "$line" | sed -E 's/.*"rule":"([^"]*)".*/\1/')
+                            component=\$(echo "\$line" | sed -E 's/.*"component":"([^"]*)".*/\\1/' | cut -d':' -f2)
+                            message=\$(echo "\$line" | sed -E 's/.*"message":"([^"]*)".*/\\1/')
+                            severity=\$(echo "\$line" | sed -E 's/.*"severity":"([^"]*)".*/\\1/')
+                            rule=\$(echo "\$line" | sed -E 's/.*"rule":"([^"]*)".*/\\1/')
                             
-                            echo "<tr><td>$component</td><td>$message</td><td class='severity-$severity'>$severity</td><td>$rule</td></tr>" >> rapport_sast.html
+                            echo "<tr><td>\$component</td><td>\$message</td><td class='severity-\$severity'>\$severity</td><td>\$rule</td></tr>" >> rapport_sast.html
                         done
                         
                         echo "</table></body></html>" >> rapport_sast.html
@@ -101,7 +101,7 @@ pipeline {
                     attachmentsPattern: 'rapport_sast.html'
                 )
             }
-            cleanWs() // Purgation propre de l'espace de travail sur l'Agent-1
+            cleanWs() // Nettoyage de l'espace de travail sur l'Agent-1
         }
     }
 }
