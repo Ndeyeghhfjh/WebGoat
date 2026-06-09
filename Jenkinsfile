@@ -1,4 +1,4 @@
-﻿pipeline {
+pipeline {
 
     agent any
 
@@ -26,13 +26,12 @@
                 echo '=== Analyse SonarQube ==='
                 sh '''
                     docker run --rm --network host \
-                        -v \C:\Users\HP\WebGoat:/usr/src \
+                        -v $WORKSPACE:/usr/src \
                         sonarsource/sonar-scanner-cli \
                         -Dsonar.projectKey=webgoat-sast \
-                        -Dsonar.sources=src/main \
-                        -Dsonar.exclusions=**/test/**,**/*.xml \
+                        -Dsonar.sources=. \
                         -Dsonar.host.url=http://localhost:9000 \
-                        -Dsonar.token=\
+                        -Dsonar.token=$SONAR_TOKEN
                 '''
             }
         }
@@ -41,15 +40,18 @@
             steps {
                 echo '=== Generation du rapport ==='
                 sh '''
-                    curl -s -u admin:\ \
-                        "\/api/issues/search?projectKeys=\&ps=500&p=1" \
+                    curl -s -u admin:admin \
+                        "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=1" \
                         -o result1.json
-                    curl -s -u admin:\ \
-                        "\/api/issues/search?projectKeys=\&ps=500&p=2" \
+
+                    curl -s -u admin:admin \
+                        "http://localhost:9000/api/issues/search?projectKeys=webgoat-sast&ps=500&p=2" \
                         -o result2.json
-                    python3 /home/jenkins/juice-shop/generate_pdf.py
-                    cp rapport_sonarqube.pdf \/rapport_webgoat.pdf || true
+
+                    python3 /home/jenkins/juice-shop/generate_pdf.py || true
+                    cp rapport_sonarqube.pdf rapport_webgoat.pdf || true
                 '''
+
                 archiveArtifacts artifacts: '*.pdf,*.json', fingerprint: true
             }
         }
@@ -59,19 +61,25 @@
         always {
             emailext(
                 to: 'astoudieng941@gmail.com',
-                subject: "[Jenkins] \ — \ #\",
+                subject: "[Jenkins] Build #${BUILD_NUMBER} - ${currentBuild.currentResult}",
                 body: """
-Build       : \
-Job         : \
-Build #     : \
-Commit      : \
-Rapport     : \artifact/rapport_webgoat.pdf
-Logs        : \console
+Build       : ${BUILD_NUMBER}
+Job         : ${JOB_NAME}
+Status      : ${currentBuild.currentResult}
+Commit      : ${GIT_COMMIT}
+Rapport     : ${BUILD_URL}artifact/rapport_webgoat.pdf
+Logs        : ${BUILD_URL}console
                 """,
                 attachmentsPattern: '*.pdf'
             )
         }
-        success { echo '=== Build reussi ===' }
-        failure { echo '=== Build echoue ===' }
+
+        success {
+            echo '=== Build reussi ==='
+        }
+
+        failure {
+            echo '=== Build echoue ==='
+        }
     }
 }
