@@ -15,12 +15,24 @@ pipeline {
     stages {
 
         // ─────────────────────────────────────────────
-        // ETAPE 1 : Recuperation du code source
+        // ETAPE 1 : Checkout shallow (repo volumineux)
         // ─────────────────────────────────────────────
         stage('Checkout') {
             steps {
                 echo '=== Recuperation du code source ==='
-                checkout scm
+                checkout([$class: 'GitSCM',
+                    branches: [[name: '*/main']],
+                    extensions: [
+                        [$class: 'CloneOption',
+                            shallow: true,
+                            depth: 1,
+                            timeout: 30]
+                    ],
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/Ndeyeghhfjh/WebGoat.git'
+                    ]]
+                ])
+                echo '=== Code recupere ==='
             }
         }
 
@@ -31,7 +43,7 @@ pipeline {
             steps {
                 echo '=== Lancement analyse SonarQube ==='
                 sh '''
-                     docker run --rm \
+                    docker run --rm \
                         --network host \
                         -v $WORKSPACE:/usr/src \
                         sonarsource/sonar-scanner-cli \
@@ -75,7 +87,7 @@ for i in issues:
     print(f\"{i.get('severity')},{msg},{i.get('component')},{i.get('line', '')}\")
 " > rapport_webgoat.csv
 
-                    echo "=== Issues exportees : \$(wc -l < rapport_webgoat.csv) lignes ==="
+                    echo "=== Issues exportees : $(wc -l < rapport_webgoat.csv) lignes ==="
                 '''
                 archiveArtifacts artifacts: '*.csv,*.json', fingerprint: true
             }
