@@ -1,8 +1,8 @@
 pipeline {
-    agent { label 'Agent-1' } // Exécution stricte sur le nœud nommé Agent-1
+    agent { label 'Agent-1' } // Exécution stricte sur votre agent nommé Agent-1
     
     triggers {
-        githubPush() // Déclenchement automatisé par le webhook GitHub
+        githubPush() // Déclenchement 100% automatisé par le webhook GitHub
     }
     
     environment {
@@ -18,16 +18,19 @@ pipeline {
             }
         }
         
-        stage('SAST - SonarQube (Maven)') {
+        stage('SAST - SonarQube via Conteneur Java 25') {
             steps {
-                echo "=== Lancement analyse SonarQube via Maven ==="
+                echo "=== Lancement analyse SonarQube dans un environnement Java 25 ==="
                 withCredentials([string(credentialsId: 'webgoat-token', variable: 'SONAR_TOKEN')]) {
-                    // RESOLUTION : Utilisation du wrapper Maven natif de WebGoat pour indexer et analyser le code Java/JS
+                    // RESOLUTION : Utilisation d'une image Maven embarquant nativement Java 25 pour éviter le crash du compilateur
                     sh '''
-                        chmod +x ./mvnw
-                        ./mvnw clean verify sonar:sonar \
+                        docker run --rm --network host \
+                        -v "${WORKSPACE}:/usr/src" \
+                        -w /usr/src \
+                        maven:3.9-eclipse-temurin-25 \
+                        mvn clean verify sonar:sonar \
                         -Dsonar.projectKey=webgoat-sast \
-                        -Dsonar.host.url=http://localhost:9000 \
+                        -Dsonar.host.url=http://127.0.0.1:9000 \
                         -Dsonar.token=${SONAR_TOKEN} \
                         -Dmaven.test.skip=true \
                         -Dsonar.scm.disabled=true
@@ -61,9 +64,9 @@ pipeline {
                         echo "<div class='summary'><p><strong>Statut :</strong> Analyse Terminée avec Succès</p><p><strong>Outil :</strong> SonarQube Maven Plugin</p></div>" >> rapport_sast.html
                         echo "<table><tr><th>Composant / Fichier</th><th>Message de la Faille</th><th>Sévérité</th><th>Règle</th></tr>" >> rapport_sast.html
                         
-                        # Extraction des champs du JSON pour alimenter le tableau HTML
+                        # Extraction des lignes clés du JSON pour alimenter le tableau HTML
                         cat raw_issues.json | grep -o '"component":"[^"]*","project":"[^"]*","message":"[^"]*","severity":"[^"]*","rule":"[^"]*"' | while read -r line; do
-                            component=$(echo "$line" | sed -E 's/.*"component":"([^"]*)".*/\1/' | cut -d':' -f2)
+                            component=$(echo "$line" | sed -E 's/.*"component":"([^"]*)".*/\\1/' | cut -d':' -f2)
                             message=$(echo "$line" | sed -E 's/.*"message":"([^"]*)".*/\1/')
                             severity=$(echo "$line" | sed -E 's/.*"severity":"([^"]*)".*/\1/')
                             rule=$(echo "$line" | sed -E 's/.*"rule":"([^"]*)".*/\1/')
@@ -81,7 +84,6 @@ pipeline {
     post {
         always {
             echo "=== Envoi du rapport d'erreur HTML par Mail ==="
-            // Bloc de protection pour empêcher le crash du pipeline complet si votre réseau ou SMTP bloque
             catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
                 emailext (
                     to: "${env.RECEIVER_EMAIL}",
@@ -100,7 +102,7 @@ pipeline {
                     attachmentsPattern: 'rapport_sast.html'
                 )
             }
-            cleanWs() // Nettoyage de l'espace de travail sur Agent-1
+            cleanWs() // Nettoyage propre de l'espace de travail sur Agent-1
         }
     }
 }
