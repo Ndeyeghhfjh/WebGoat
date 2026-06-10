@@ -2,7 +2,7 @@ pipeline {
     agent { label 'Agent-1' } // Exécution stricte sur l'Agent-1
     
     triggers {
-        githubPush() // Déclenchement automatique par webhook GitHub lors d'un commit
+        githubPush() // Déclenchement automatique par webhook GitHub lors d'un commit en ligne
     }
     
     environment {
